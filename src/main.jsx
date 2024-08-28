@@ -6,20 +6,18 @@ import MyReact from './my-react';
 const container = document.querySelector('#root');
 const root = MyReact.createRoot(container);
 
-const updateValue = e => {
-  renderder(e.target.value)
-}
-const renderder = value => {
-  const element = (
+function App() {
+  const [count, setCount] = MyReact.useState(0);
+  const [visible, setVisible] = MyReact.useState(false);
+  return (
     <div>
-      <input onInput={updateValue} value={value} />
-      <h1 style={{
-        color: "red"
-      }}>output{value}</h1>
+      <h1>Count: {count}</h1>
+      <button onClick={() => {
+        setCount(count + 1)
+        setVisible(!visible)
+      }}>Increment</button>
+      {visible ? <p>Visible{count}</p> : null}
     </div>
   )
-  console.log('element', element)
-  root.render(element);
 }
-
-renderder()
+root.render(<App />);

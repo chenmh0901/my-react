@@ -1,7 +1,8 @@
 import createElement from "./createElement";
-import createRoot from "./createRoot";
+import { createRoot, useState } from "./createRoot";
 
 export default {
   createElement,
-  createRoot
+  createRoot,
+  useState
 }

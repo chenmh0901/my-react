@@ -1,7 +1,10 @@
 let nextUnitOfWork = null;
-let wipRoot = null;
-let currentRoot = null;
+let wipRoot = null; // 当前正在构建的 fiber 树根节点
+let currentRoot = null; // 当前的 fiber 树根节点
 let deletions = [];
+let wipFiber = null;
+let hookIndex = 0;
+
 /**
  * <div>
  *    <h1>
@@ -65,22 +68,31 @@ function reconcileChildren(wipFiber, elements) {
   }
 }
 
-function performUnitOfWork(fiber) {
-  // TODO 将 ReactElement 转换成一个真实DOM
-  // 如果 fiber 没有真实 DOM 节点，创建一个
+function updateFunctionComponent(fiber) {
+  wipFiber = fiber;
+  wipFiber.hooks = [];
+  hookIndex = 0;
+  const children = [fiber.type(fiber.props)];
+  reconcileChildren(fiber, children);
+}
+
+function updateHostComponent(fiber) {
   if (!fiber.dom) {
     fiber.dom = createDom(fiber);
   }
-  const elements = fiber?.props?.children;
-
+  // 为当前 fiber 创建子节点 fiber.child => new
+  // new fiber == parent | sibling 
+  const elements = fiber.props.children;
   reconcileChildren(fiber, elements);
-  // 为当前 fiber 创建子fiber fiber.child = new
-  // new fiber === parent | sibling
-  // parent child sibling
-
-  // 获得子节点
-
-  // return 下一个任务单元
+}
+function performUnitOfWork(fiber) {
+  const isFunctionComponent = fiber.type instanceof Function;
+  if (isFunctionComponent) {
+    updateFunctionComponent(fiber)
+  } else {
+    updateHostComponent(fiber);
+  }
+  // return 下一个任务单元 当前任务单元已经在处理了
   if (fiber.child) {
     return fiber.child
   }
@@ -137,10 +149,25 @@ function updateDom(dom, prevProps, nextProps) {
       dom.addEventListener(eventType, nextProps[name]);
     });
 }
+
+function commitDeletion(fiber, domParent) {
+  if (fiber.dom) {
+    domParent.removeChild(fiber.dom);
+  } else {
+    commitDeletion(fiber.child, domParent);
+  }
+}
+
 function commitWork(fiber) {
   if (!fiber) return;
 
-  const domParent = fiber.parent.dom;
+  // const domParent = fiber.parent.dom;
+  let domParentFiber = fiber.parent;
+
+  while (!domParentFiber.dom) {
+    domParentFiber = domParentFiber.parent;
+  }
+  const domParent = domParentFiber.dom;
 
   switch (fiber.effectTag) {
     case 'PLACEMENT':
@@ -153,8 +180,7 @@ function commitWork(fiber) {
         updateDom(fiber.dom, fiber.alternate.props, fiber.props);
       break;
     case 'DELETION':
-      !!fiber.dom &&
-        domParent.removeChild(fiber.dom);
+      commitDeletion(fiber, domParent);
       break;
     default:
       break;
@@ -162,7 +188,6 @@ function commitWork(fiber) {
 
   commitWork(fiber.child);
   commitWork(fiber.sibling);
-
 }
 
 // 一次性渲染
@@ -179,6 +204,7 @@ function commitRoot() {
 
 function workLoop(deadline) {
   let shouldYield = false;
+  // 遍历找到下一个需要处理的 Fiber 节点
   while (nextUnitOfWork && !shouldYield) {
     nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
     shouldYield = deadline.timeRemaining() < 1; // 得到浏览器当前帧剩余时间 React -> scheduler
@@ -200,7 +226,7 @@ function createDom(fiber) {
   return dom;
 }
 
-function createRoot(container) {
+export function createRoot(container) {
   const containerNode = container;
 
   function render(element) {
@@ -221,4 +247,32 @@ function createRoot(container) {
   }
 }
 
-export default createRoot;
+export function useState(initial) {
+  const oldHook = wipFiber?.alternate?.hooks[hookIndex];
+
+  const hook = {
+    state: oldHook ? oldHook.state : initial,
+    queue: []
+  }
+
+  const actions = oldHook ? oldHook.queue : [];
+  actions.forEach(action => {
+    hook.state = action
+  })
+
+  const setState = action => {
+    hook.queue.push(action);
+    wipRoot = {
+      dom: currentRoot.dom,
+      props: currentRoot.props,
+      alternate: currentRoot
+    }
+    // 进行下一轮 更新 DOM 操作
+    nextUnitOfWork = wipRoot;
+    deletions = [];
+  }
+
+  wipFiber.hooks.push(hook);
+  hookIndex++;
+  return [hook.state, setState];
+}
